@@ -2,14 +2,14 @@ package myMQTTClient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
-	"encoding/json"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"go.viam.com/rdk/components/sensor"
+	"go.viam.com/rdk/data"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/resource"
 )
@@ -28,13 +28,12 @@ var Model = resource.NewModel("bill", "mqtt", "json")
 
 // Maps JSON component configuration attributes.
 type Config struct {
-	Topic string `json:"topic"`
-	Host  string `json:"host"`
-	Port  int    `json:"port"`
-	QoS   int    `json:"qos"`
+	Topic       string `json:"topic"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	QoS         int    `json:"qos"`
+	QueueLength int    `json:"q_length"`
 }
-
-var payloadData map[string]interface{}
 
 // Implement component configuration validation and and return implicit dependencies.
 func (cfg *Config) Validate(path string) ([]string, error) {
@@ -69,6 +68,8 @@ type MQTT_Client struct {
 	Host          string
 	Port          int
 	QoS           byte
+	messageQueue  []map[string]interface{}
+	queueLength   int
 	latestMessage map[string]interface{}
 	mutex         sync.Mutex
 }
@@ -104,41 +105,56 @@ func (s *MQTT_Client) Reconfigure(ctx context.Context, deps resource.Dependencie
 	s.Host = clientConfig.Host
 	s.Port = clientConfig.Port
 	s.QoS = byte(clientConfig.QoS) // Assuming qos in Config is an int and needs conversion to byte
+	s.queueLength = clientConfig.QueueLength
 
 	// Log the new configuration (optional, adjust logging as needed)
 	s.logger.Infof("Reconfigured MQTT_Client with topic: %s, host: %s, port: %d, qos: %d", s.Topic, s.Host, s.Port, s.QoS)
 
-    // Error handling channel
-    errChan := make(chan error, 1)
+	// Error handling channel
+	errChan := make(chan error, 1)
 
-    // Start InitMQTTClient in a goroutine
-    go func() {
-        errChan <- s.InitMQTTClient(ctx)
-        close(errChan)
-    }()
+	// Start InitMQTTClient in a goroutine
+	go func() {
+		errChan <- s.InitMQTTClient(ctx)
+		close(errChan)
+	}()
 
-    // Handle errors from the goroutine
-    for err := range errChan {
-        if err != nil {
-            // Handle error, e.g., log it or restart the initialization process
-            s.logger.Errorf("Error initializing MQTT client: %v", err)
-            // Take appropriate action based on the error
-        }
-    }
+	// Handle errors from the goroutine
+	for err := range errChan {
+		if err != nil {
+			// Handle error, e.g., log it or restart the initialization process
+			s.logger.Errorf("Error initializing MQTT client: %v", err)
+			// Take appropriate action based on the error
+		}
+	}
 
 	return err
 }
 
 // Get sensor reading
-func (s *MQTT_Client) Readings(ctx context.Context, _ map[string]interface{}) (map[string]interface{}, error) {
+func (s *MQTT_Client) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	// Return the latest message if the message queue is not empty and call is from viam data manager
+	if extra[data.FromDMString] == true {
+		if len(s.messageQueue) != 0 {
+			oldestMessage := s.messageQueue[0]
+			s.messageQueue = s.messageQueue[1:]
+			return map[string]interface{}{
+				"payload":            oldestMessage,
+				"qos":                int32(s.QoS),
+				"topic_from_message": s.Topic,
+			}, nil
+		} else {
+			return nil, data.ErrNoCaptureToStore
+		}
+	}
 
 	return map[string]interface{}{
-        "payload":           s.latestMessage,
-        "qos":               int32(s.QoS),
-        "topic_from_message": s.Topic,
-    }, nil
+		"payload":            s.latestMessage,
+		"qos":                int32(s.QoS),
+		"topic_from_message": s.Topic,
+	}, nil
 }
 
 // DoCommand can be implemented to extend sensor functionality but returns unimplemented in this example.
@@ -162,22 +178,29 @@ func (s *MQTT_Client) InitMQTTClient(ctx context.Context) error {
 	go func() {
 		if token := s.client.Subscribe(s.Topic, s.QoS, func(client mqtt.Client, msg mqtt.Message) {
 			s.mutex.Lock()
-        	defer s.mutex.Unlock()
+			defer s.mutex.Unlock()
 
-	        // Parse the payload
-    	    var payloadData map[string]interface{} // Use this line if the structure is dynamic
-        	// var payloadData SensorData // Use this line if the structure is known
-        	err := json.Unmarshal(msg.Payload(), &payloadData)
-        	if err != nil {
-            	log.Println("Error parsing JSON payload:", err)
-            	return
-        	}
-	        s.latestMessage = payloadData // Store the parsed data
-    	}); token.Wait() && token.Error() != nil {
-        	// Handle subscription error
-        	log.Println("Subscription error:", token.Error())
+			// Parse the payload
+			var payloadData map[string]interface{} // Use this line if the structure is dynamic
+			// var payloadData SensorData // Use this line if the structure is known
+			err := json.Unmarshal(msg.Payload(), &payloadData)
+			if err != nil {
+				s.logger.Errorf("error parsing JSON payload:", err)
+				return
+			}
+			s.latestMessage = payloadData
+			s.logger.Infof("message queue length: %v", len(s.messageQueue))
+			if len(s.messageQueue) == s.queueLength {
+				s.messageQueue = s.messageQueue[1:]
+				s.messageQueue = append(s.messageQueue, payloadData)
+			}
+			s.messageQueue = append(s.messageQueue, payloadData)
+
+		}); token.Wait() && token.Error() != nil {
+			// Handle subscription error
+			s.logger.Errorf("subscription error:", token.Error())
 		}
-		}()
+	}()
 
 	return nil
 }

@@ -25,19 +25,22 @@ Run "bash setup_venv.sh" to create the python environment and install the requir
      - Germany/Bavaria/car/2382340923453/latitude: This topic structure could be utilized to share the latitude coordinates of a particular car in the region of Bavaria, Germany.
   * "host": The broker’s hostname/IP
   * "port": The broker’s port
+  * "q_length": How many messages are kept before being overwritten
 ### Example:
 ```json
 {
   "qos": 0,
   "topic": "aranet/358151004965/sensors/6009F3/json/measurements",
   "host": "10.1.8.247",
-  "port": 1883
+  "port": 1883,
+  "q_length": 10
 }
 
 {
   "qos": 0,
   "topic": "aranet/358151004965/sensors/1010EA/json/measurements",
   "host": "10.1.8.247",
-  "port": 1883
+  "port": 1883,
+  "q_length": 10
 }
 ```
