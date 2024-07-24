@@ -9,5 +9,9 @@
       "api": "rdk:component:sensor"
     }
   ],
-  "entrypoint": "viam-mqtt"
+  "entrypoint": "bin/viam-mqtt",
+  "build": {
+    "build": "make module",
+    "arch" : ["darwin/arm64", "linux/amd64", "linux/arm64"]
+  }
 }

@@ -1,4 +1,3 @@
-MQTT_Integration_Example
 /bin
 /include
 /lib
@@ -7,3 +6,4 @@ MQTT_Integration_Example
 /src/__pycache__
 /venv/
 pyvenv.cfg
+module.tar.gz
