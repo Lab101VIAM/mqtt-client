@@ -1,13 +1,13 @@
 {
-  "module_id": "bill:mqtt-subscriber",
+  "module_id": "viam-soleng:mqtt-client",
   "visibility": "public",
-  "url": "https://github.com/williamjhyland/MQTT_Integration_Example",
-  "description": "MQTT decouples the publisher and subscriber spatially, meaning they only need to know the broker’s hostname/IP and port to publish or receive messages.",
+  "url": "https://github.com/viam-soleng/mqtt-client",
+  "description": "A Viam solutions engineering mqtt client module including message caching and filtered recording.",
   "models": [
     {
-      "model": "bill:mqtt-subscriber:json",
+      "model": "viam-soleng:mqtt:client",
       "api": "rdk:component:sensor"
     }
   ],
-  "entrypoint": "MQTT_Integration_Example"
+  "entrypoint": "viam-mqtt"
 }

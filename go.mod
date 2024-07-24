@@ -1,4 +1,4 @@
-module github.com/williamjhyland/MQTT_Integration_Example
+module github.com/viam-soleng/mqtt-client
 
 go 1.21.5
 
