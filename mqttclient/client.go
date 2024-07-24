@@ -1,4 +1,4 @@
-package myMQTTClient
+package mqttclient
 
 import (
 	"context"
@@ -24,7 +24,7 @@ var errUnimplemented = errors.New("unimplemented")
 
 // Your model's colon-delimited-triplet (acme:demo:mybase). acme = namespace, demo = repo-name, mybase = model name
 // If you plan to upload this module to the Viam registry, "acme" must match your Viam registry namespace.
-var Model = resource.NewModel("bill", "mqtt", "json")
+var Model = resource.NewModel("viam-soleng", "mqtt", "client")
 
 // Maps JSON component configuration attributes.
 type Config struct {
@@ -39,28 +39,28 @@ type Config struct {
 func (cfg *Config) Validate(path string) ([]string, error) {
 	// Check if the topic is set
 	if cfg.Topic == "" {
-		return nil, fmt.Errorf("topic is required for MQTT_Client %q", path)
+		return nil, fmt.Errorf("topic is required %q", path)
 	}
 
 	// Check if the host is set
 	if cfg.Host == "" {
-		return nil, fmt.Errorf("host is required for MQTT_Client %q", path)
+		return nil, fmt.Errorf("host is required %q", path)
 	}
 
 	// Check if the port is valid
 	if cfg.Port <= 0 {
-		return nil, fmt.Errorf("invalid port (should be > 0) for MQTT_Client %q", path)
+		return nil, fmt.Errorf("invalid port (should be > 0) %q", path)
 	}
 
 	// Check if qos is within a valid range (usually 0 to 2 for MQTT)
 	if cfg.QoS < 0 || cfg.QoS > 2 {
-		return nil, fmt.Errorf("qos must be between 0 and 2 for MQTT_Client %q", path)
+		return nil, fmt.Errorf("qos must be between 0 and 2 %q", path)
 	}
 
 	return []string{}, nil
 }
 
-type MQTT_Client struct {
+type mqttClient struct {
 	resource.Named
 	logger        logging.Logger
 	client        mqtt.Client
@@ -77,7 +77,7 @@ type MQTT_Client struct {
 // Sensor type constructor.
 // Called upon sensor instantiation when a sensor model is added to the machine configuration
 func newSensor(ctx context.Context, deps resource.Dependencies, conf resource.Config, logger logging.Logger) (sensor.Sensor, error) {
-	s := &MQTT_Client{
+	s := &mqttClient{
 		Named:  conf.ResourceName().AsNamed(),
 		logger: logger,
 	}
@@ -88,7 +88,7 @@ func newSensor(ctx context.Context, deps resource.Dependencies, conf resource.Co
 }
 
 // Reconfigure reconfigures with new settings.
-func (s *MQTT_Client) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
+func (s *mqttClient) Reconfigure(ctx context.Context, deps resource.Dependencies, conf resource.Config) error {
 	// Convert the generic resource.Config to the MQTT_Client-specific Config structure
 	clientConfig, err := resource.NativeConfig[*Config](conf)
 	if err != nil {
@@ -108,7 +108,7 @@ func (s *MQTT_Client) Reconfigure(ctx context.Context, deps resource.Dependencie
 	s.queueLength = clientConfig.QueueLength
 
 	// Log the new configuration (optional, adjust logging as needed)
-	s.logger.Infof("Reconfigured MQTT_Client with topic: %s, host: %s, port: %d, qos: %d", s.Topic, s.Host, s.Port, s.QoS)
+	s.logger.Infof("Reconfigured mqtt client with topic: %s, host: %s, port: %d, qos: %d", s.Topic, s.Host, s.Port, s.QoS)
 
 	// Error handling channel
 	errChan := make(chan error, 1)
@@ -123,7 +123,7 @@ func (s *MQTT_Client) Reconfigure(ctx context.Context, deps resource.Dependencie
 	for err := range errChan {
 		if err != nil {
 			// Handle error, e.g., log it or restart the initialization process
-			s.logger.Errorf("Error initializing MQTT client: %v", err)
+			s.logger.Errorf("Error initializing mqtt client: %v", err)
 			// Take appropriate action based on the error
 		}
 	}
@@ -132,7 +132,7 @@ func (s *MQTT_Client) Reconfigure(ctx context.Context, deps resource.Dependencie
 }
 
 // Get sensor reading
-func (s *MQTT_Client) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
+func (s *mqttClient) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	// Return the latest message if the message queue is not empty and call is from viam data manager
@@ -158,12 +158,12 @@ func (s *MQTT_Client) Readings(ctx context.Context, extra map[string]interface{}
 }
 
 // DoCommand can be implemented to extend sensor functionality but returns unimplemented in this example.
-func (s *MQTT_Client) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+func (s *mqttClient) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
 	return nil, errUnimplemented
 }
 
 // New function to initialize MQTT client and start the goroutine
-func (s *MQTT_Client) InitMQTTClient(ctx context.Context) error {
+func (s *mqttClient) InitMQTTClient(ctx context.Context) error {
 	// Create a client and connect to the broker
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", s.Host, s.Port))
@@ -206,7 +206,7 @@ func (s *MQTT_Client) InitMQTTClient(ctx context.Context) error {
 }
 
 // Add a Close method to clean up the MQTT client
-func (s *MQTT_Client) Close(ctx context.Context) error {
+func (s *mqttClient) Close(ctx context.Context) error {
 	if s.client != nil && s.client.IsConnected() {
 		s.client.Disconnect(250) // Timeout in milliseconds
 	}
