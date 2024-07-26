@@ -26,7 +26,8 @@ Run "bash setup_venv.sh" to create the python environment and install the requir
   * "host": The broker’s hostname/IP
   * "port": The broker’s port
   * "q_length": How many messages are kept before being overwritten
-  * "msg_type": Specify the message payload structure: "string" | "json" // default raw
+  * "clientid": Optional string to be used to identify the mqtt client
+  * "payload": Specify the message payload structure: "string" | "json" // default raw
 ### Example:
 ```json
 {
@@ -35,7 +36,8 @@ Run "bash setup_venv.sh" to create the python environment and install the requir
   "host": "10.1.8.247",
   "port": 1883,
   "q_length": 10,
-  "msg_type": "string" | "json" // default raw
+  "clientid": "" // optional string
+  "payload": "string" | "json" // default raw
 }
 
 {
@@ -44,6 +46,6 @@ Run "bash setup_venv.sh" to create the python environment and install the requir
   "host": "10.1.8.247",
   "port": 1883,
   "q_length": 10,
-  "msg_type": "string" | "json" // default raw
+  "payload": "string" | "json" // default raw
 }
 ```
