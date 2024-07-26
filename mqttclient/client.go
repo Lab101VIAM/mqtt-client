@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -33,6 +35,8 @@ type Config struct {
 	Port        int    `json:"port"`
 	QoS         int    `json:"qos"`
 	QueueLength int    `json:"q_length"`
+	ClientID    string `json:"clientid"`
+	PayloadType string `json:"payload"` // Supported json, string, raw (default)
 }
 
 // Implement component configuration validation and and return implicit dependencies.
@@ -68,9 +72,11 @@ type mqttClient struct {
 	Host          string
 	Port          int
 	QoS           byte
-	messageQueue  []map[string]interface{}
+	ClientID      string
+	payloadType   string
+	messageQueue  []mqtt.Message
 	queueLength   int
-	latestMessage map[string]interface{}
+	latestMessage mqtt.Message
 	mutex         sync.Mutex
 }
 
@@ -106,9 +112,10 @@ func (s *mqttClient) Reconfigure(ctx context.Context, deps resource.Dependencies
 	s.Port = clientConfig.Port
 	s.QoS = byte(clientConfig.QoS) // Assuming qos in Config is an int and needs conversion to byte
 	s.queueLength = clientConfig.QueueLength
-
+	s.ClientID = clientConfig.ClientID
+	s.payloadType = clientConfig.PayloadType
 	// Log the new configuration (optional, adjust logging as needed)
-	s.logger.Infof("Reconfigured mqtt client with topic: %s, host: %s, port: %d, qos: %d", s.Topic, s.Host, s.Port, s.QoS)
+	s.logger.Infof("Reconfigured mqtt client with topic: %s, host: %s, port: %d, qos: %d, clientID: %s, payload: %s, q_length: %v", s.Topic, s.Host, s.Port, s.QoS, s.ClientID, s.payloadType, s.queueLength)
 
 	// Error handling channel
 	errChan := make(chan error, 1)
@@ -135,26 +142,78 @@ func (s *mqttClient) Reconfigure(ctx context.Context, deps resource.Dependencies
 func (s *mqttClient) Readings(ctx context.Context, extra map[string]interface{}) (map[string]interface{}, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	// Return the latest message if the message queue is not empty and call is from viam data manager
+	// If Viam data manager return the latest message if the message queue is not empty and remove it from the queue
 	if extra[data.FromDMString] == true {
 		if len(s.messageQueue) != 0 {
 			oldestMessage := s.messageQueue[0]
 			s.messageQueue = s.messageQueue[1:]
+			parsedPayload, err := parsePayload(s.payloadType, oldestMessage)
+			if err != nil {
+				s.logger.Error(err)
+				return nil, data.ErrNoCaptureToStore
+			}
 			return map[string]interface{}{
-				"payload":            oldestMessage,
-				"qos":                int32(s.QoS),
-				"topic_from_message": s.Topic,
+				"payload": parsedPayload,
+				"qos":     int32(s.QoS),
+				"topic":   s.Topic,
 			}, nil
 		} else {
 			return nil, data.ErrNoCaptureToStore
 		}
 	}
+	// If not data manager return the latest message
+	// Check if there have been any messages received
+	if s.latestMessage != nil {
+		parsedPayload, err := parsePayload(s.payloadType, s.latestMessage)
+		if err != nil {
+			s.logger.Errorf("error parsing JSON message:", err, parsedPayload)
+			return nil, err
+		}
+		return map[string]interface{}{
+			"payload": parsedPayload,
+			"qos":     int32(s.QoS),
+			"topic":   s.Topic,
+		}, nil
 
-	return map[string]interface{}{
-		"payload":            s.latestMessage,
-		"qos":                int32(s.QoS),
-		"topic_from_message": s.Topic,
-	}, nil
+	} else {
+		return nil, nil
+	}
+
+}
+
+// Parse mqtt message
+func parsePayload(mtype string, msg mqtt.Message) (interface{}, error) {
+	var payload interface{}
+	switch mtype {
+	case "json":
+		err := json.Unmarshal(msg.Payload(), &payload)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing JSON message: %v", err)
+		}
+	case "string":
+		payload = string(msg.Payload())
+	case "telwin":
+		s := string(msg.Payload())
+		sparts := strings.FieldsFunc(s, Split)
+		//b64, err := base64.StdEncoding.DecodeString(sparts[3])
+		unescaped, err := url.QueryUnescape(sparts[3])
+		if err != nil {
+			return nil, err
+		}
+		var jsonStruct map[string]interface{}
+		err = json.Unmarshal([]byte(unescaped), &jsonStruct)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing JSON message: %v", err)
+		}
+		payload = map[string]interface{}{sparts[0]: sparts[1], sparts[2]: jsonStruct}
+	default:
+		payload = msg.Payload()
+	}
+	return payload, nil
+}
+
+func Split(r rune) bool {
+	return r == '=' || r == '&' || r == '"'
 }
 
 // DoCommand can be implemented to extend sensor functionality but returns unimplemented in this example.
@@ -167,7 +226,7 @@ func (s *mqttClient) InitMQTTClient(ctx context.Context) error {
 	// Create a client and connect to the broker
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", s.Host, s.Port))
-	// opts.SetClientID("your_client_id") // Set a unique client ID
+	opts.SetClientID(s.ClientID) // Set a unique client ID
 
 	s.client = mqtt.NewClient(opts)
 	if token := s.client.Connect(); token.Wait() && token.Error() != nil {
@@ -180,21 +239,14 @@ func (s *mqttClient) InitMQTTClient(ctx context.Context) error {
 			s.mutex.Lock()
 			defer s.mutex.Unlock()
 
-			// Parse the payload
-			var payloadData map[string]interface{} // Use this line if the structure is dynamic
-			// var payloadData SensorData // Use this line if the structure is known
-			err := json.Unmarshal(msg.Payload(), &payloadData)
-			if err != nil {
-				s.logger.Errorf("error parsing JSON payload:", err)
-				return
-			}
-			s.latestMessage = payloadData
-			s.logger.Infof("message queue length: %v", len(s.messageQueue))
+			// TODO: use flag instead of duplicating messages
+			s.latestMessage = msg
+			s.logger.Debugf("message queue length: %v", len(s.messageQueue))
 			if len(s.messageQueue) == s.queueLength {
 				s.messageQueue = s.messageQueue[1:]
-				s.messageQueue = append(s.messageQueue, payloadData)
+				s.messageQueue = append(s.messageQueue, msg)
 			}
-			s.messageQueue = append(s.messageQueue, payloadData)
+			s.messageQueue = append(s.messageQueue, msg)
 
 		}); token.Wait() && token.Error() != nil {
 			// Handle subscription error
