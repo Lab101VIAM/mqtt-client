@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -34,7 +36,7 @@ type Config struct {
 	QoS         int    `json:"qos"`
 	QueueLength int    `json:"q_length"`
 	ClientID    string `json:"clientid"`
-	MessageType string `json:"msg_type"` // Supported json, string, raw (default)
+	PayloadType string `json:"payload"` // Supported json, string, raw (default)
 }
 
 // Implement component configuration validation and and return implicit dependencies.
@@ -59,12 +61,6 @@ func (cfg *Config) Validate(path string) ([]string, error) {
 		return nil, fmt.Errorf("qos must be between 0 and 2 %q", path)
 	}
 
-	switch cfg.MessageType {
-	case "", "json", "string", "raw":
-	default:
-		return nil, fmt.Errorf(`message type must be either "", "json", "string", or "raw"`)
-	}
-
 	return []string{}, nil
 }
 
@@ -77,7 +73,7 @@ type mqttClient struct {
 	Port          int
 	QoS           byte
 	ClientID      string
-	messageType   string
+	payloadType   string
 	messageQueue  []mqtt.Message
 	queueLength   int
 	latestMessage mqtt.Message
@@ -117,9 +113,9 @@ func (s *mqttClient) Reconfigure(ctx context.Context, deps resource.Dependencies
 	s.QoS = byte(clientConfig.QoS) // Assuming qos in Config is an int and needs conversion to byte
 	s.queueLength = clientConfig.QueueLength
 	s.ClientID = clientConfig.ClientID
-	s.messageType = clientConfig.MessageType
+	s.payloadType = clientConfig.PayloadType
 	// Log the new configuration (optional, adjust logging as needed)
-	s.logger.Infof("Reconfigured mqtt client with topic: %s, host: %s, port: %d, qos: %d, clientID: %s, msgtype: %s, q_length: %v", s.Topic, s.Host, s.Port, s.QoS, s.ClientID, s.messageType, s.queueLength)
+	s.logger.Infof("Reconfigured mqtt client with topic: %s, host: %s, port: %d, qos: %d, clientID: %s, payload: %s, q_length: %v", s.Topic, s.Host, s.Port, s.QoS, s.ClientID, s.payloadType, s.queueLength)
 
 	// Error handling channel
 	errChan := make(chan error, 1)
@@ -151,7 +147,7 @@ func (s *mqttClient) Readings(ctx context.Context, extra map[string]interface{})
 		if len(s.messageQueue) != 0 {
 			oldestMessage := s.messageQueue[0]
 			s.messageQueue = s.messageQueue[1:]
-			parsedPayload, err := parsePayload(s.messageType, oldestMessage)
+			parsedPayload, err := parsePayload(s.payloadType, oldestMessage)
 			if err != nil {
 				s.logger.Error(err)
 				return nil, data.ErrNoCaptureToStore
@@ -168,8 +164,9 @@ func (s *mqttClient) Readings(ctx context.Context, extra map[string]interface{})
 	// If not data manager return the latest message
 	// Check if there have been any messages received
 	if s.latestMessage != nil {
-		parsedPayload, err := parsePayload(s.messageType, s.latestMessage)
+		parsedPayload, err := parsePayload(s.payloadType, s.latestMessage)
 		if err != nil {
+			s.logger.Errorf("error parsing JSON message:", err, parsedPayload)
 			return nil, err
 		}
 		return map[string]interface{}{
@@ -191,15 +188,32 @@ func parsePayload(mtype string, msg mqtt.Message) (interface{}, error) {
 	case "json":
 		err := json.Unmarshal(msg.Payload(), &payload)
 		if err != nil {
-			//s.logger.Errorf("error parsing JSON message:", err)
 			return nil, fmt.Errorf("error parsing JSON message: %v", err)
 		}
 	case "string":
 		payload = string(msg.Payload())
+	case "telwin":
+		s := string(msg.Payload())
+		sparts := strings.FieldsFunc(s, Split)
+		//b64, err := base64.StdEncoding.DecodeString(sparts[3])
+		unescaped, err := url.QueryUnescape(sparts[3])
+		if err != nil {
+			return nil, err
+		}
+		var jsonStruct map[string]interface{}
+		err = json.Unmarshal([]byte(unescaped), &jsonStruct)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing JSON message: %v", err)
+		}
+		payload = map[string]interface{}{sparts[0]: sparts[1], sparts[2]: jsonStruct}
 	default:
 		payload = msg.Payload()
 	}
 	return payload, nil
+}
+
+func Split(r rune) bool {
+	return r == '=' || r == '&' || r == '"'
 }
 
 // DoCommand can be implemented to extend sensor functionality but returns unimplemented in this example.
@@ -227,7 +241,7 @@ func (s *mqttClient) InitMQTTClient(ctx context.Context) error {
 
 			// TODO: use flag instead of duplicating messages
 			s.latestMessage = msg
-			s.logger.Infof("message queue length: %v", len(s.messageQueue))
+			s.logger.Debugf("message queue length: %v", len(s.messageQueue))
 			if len(s.messageQueue) == s.queueLength {
 				s.messageQueue = s.messageQueue[1:]
 				s.messageQueue = append(s.messageQueue, msg)
