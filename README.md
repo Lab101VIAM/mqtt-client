@@ -1,18 +1,16 @@
-# What is MQTT?
-The MQTT protocol is the de-facto standard for IoT messaging. Standardized by OASIS and ISO, MQTT publish/subscribe protocol provides a scalable and reliable way to connect devices over the Internet. Today, MQTT is used by many companies to connect millions of devices to the Internet.
+# Viam MQTT Client Module
 
-MQTT decouples the publisher and subscriber spatially, meaning they only need to know the broker’s hostname/IP and port to publish or receive messages.
+This Viam module wraps the Eclipse Paho MQTT Golang library into a Viam sensor component, allowing you to connect to a MQTT broker and poll messages. The module supports a configurable message cache to handle message bursts without loosing messages as well as basic message payload parsing.
 
-# MQTT_Integration_Example
+Feel free to open an issue if you run into any problems or open a pull request if you have useful features or bug fixes!
+
 ## How does this module work?
-The modules main.py adds the module to the Viam registry. The script MQTT_Integration contains the get_readings() method that a Viam sensor must fulfill. The module spins up a MyThread class to manage clients. The client created by the module senda a SUBSCRIBE message to the broker with the topic of interest in the configuration.
 
-The modules on_message() method is called whenever the broker sends a message down to the client. This overwrites an internal attribute called message which is referenced whenever the get_readings() method is called.
+This Viam module contains a Viam sensor component which represents the MQTT client. Using the below mentioned settings, you can configure the clien to connect to a MQTT broker and subscribe to topics.
+Once the component has connected to a broker, you can then use the [sensor component APIs](https://docs.viam.com/components/sensor/) to read messages from the queue.
+There is one important feature hidden behind the API. If you use the Viam data manager to record messages, it will always take the oldest MQTT message from the queue until the queue is empty. This way you can make sure you don't loose messages during a message burst and can configure a reasonable polling freqency. If you request the readings with your own client using any of our sdks, you will always get the latest message and the message will not be removed but rather returned again in a next request unless overridden in the meantime.
 
-Separately there is some basic logging on start up to confirm that subscriptions occured appropriately and the configuration is valid.
-
-Run "bash setup_venv.sh" to create the python environment and install the requirements then reboot the device.
-## Sensor Configuration:
+## MQTT Client Configuration:
 ### Parameters:
   * "qos": If the subscribing client defines a lower QoS level than the publishing client, the broker will transmit the message with the lower QoS level.
      - At most once (QoS 0)
