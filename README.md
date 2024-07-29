@@ -11,6 +11,8 @@ Once the component has connected to a broker, you can then use the [sensor compo
 There is one important feature hidden behind the API. If you use the Viam data manager to record messages, it will always take the oldest MQTT message from the queue until the queue is empty. This way you can make sure you don't loose messages during a message burst and can configure a reasonable polling freqency. If you request the readings with your own client using any of our sdks, you will always get the latest message and the message will not be removed but rather returned again in a next request unless overridden in the meantime.
 
 ## MQTT Client Configuration:
+
+This Viam module can easily be installed via [Viam Registry](https://docs.viam.com/registry/) -> [MQTT Client Module](https://app.viam.com/module/viam-soleng/mqtt-client)
 ### Parameters:
   * "qos": If the subscribing client defines a lower QoS level than the publishing client, the broker will transmit the message with the lower QoS level.
      - At most once (QoS 0)
