@@ -52,7 +52,7 @@ There is one important feature hidden behind the API. If you use the Viam data m
 
 Viam sensor components provide a DoCommand() api for which we have implemented the publish command.
 
-Example command structure:
+Example command structures:
 
 ```json
 {"publish":{
@@ -62,3 +62,13 @@ Example command structure:
     "payload": "hello world"
 }}
 ```
+
+```json
+{"publish":{
+    "topic": "test",
+    "qos": 0,
+    "retained": false,
+    "payload": "{\"hello\": \"world\"}"
+}}
+```
+
