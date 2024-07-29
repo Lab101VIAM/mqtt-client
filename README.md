@@ -26,11 +26,12 @@ There is one important feature hidden behind the API. If you use the Viam data m
   * "q_length": How many messages are kept before being overwritten
   * "clientid": Optional string to be used to identify the mqtt client
   * "payload": Specify the message payload structure: "string" | "json" // default raw
-### Example:
+
+### Examples:
 ```json
 {
   "qos": 0,
-  "topic": "aranet/358151004965/sensors/6009F3/json/measurements",
+  "topic": "topic",
   "host": "10.1.8.247",
   "port": 1883,
   "q_length": 10,
@@ -46,4 +47,18 @@ There is one important feature hidden behind the API. If you use the Viam data m
   "q_length": 10,
   "payload": "string" | "json" // default raw
 }
+```
+## Publish MQTT Messages
+
+Viam sensor components provide a DoCommand() api for which we have implemented the publish command.
+
+Example command structure:
+
+```json
+{"publish":{
+    "topic": "topic",
+    "qos": 0,
+    "retained": false,
+    "payload": "hello world"
+}}
 ```

@@ -218,7 +218,49 @@ func Split(r rune) bool {
 
 // DoCommand can be implemented to extend sensor functionality but returns unimplemented in this example.
 func (s *mqttClient) DoCommand(ctx context.Context, cmd map[string]interface{}) (map[string]interface{}, error) {
+	for k, v := range cmd {
+		switch k {
+		case "publish":
+			jsonbody, err := json.Marshal(v)
+			if err != nil {
+				return nil, err
+			}
+			msg := Message{}
+			if err := json.Unmarshal(jsonbody, &msg); err != nil {
+				return nil, err
+			}
+			err = s.publish(msg.Topic, msg.Qos, msg.Retained, msg.Payload)
+			if err != nil {
+				return nil, err
+			} else {
+				return map[string]interface{}{"result": "success"}, nil
+			}
+		}
+	}
 	return nil, errUnimplemented
+}
+
+// MQTT message struct for publishing
+type Message struct {
+	Topic    string
+	Qos      byte
+	Retained bool
+	Payload  interface{}
+}
+
+// Publish a MQTT message
+func (s *mqttClient) publish(topic string, qos byte, retained bool, payload interface{}) error {
+	if s.client.IsConnected() {
+		t := s.client.Publish(topic, qos, retained, payload)
+		_ = t.Wait() // Can also use '<-t.Done()' in releases > 1.2.0
+		if t.Error() != nil {
+			s.logger.Error(t.Error())
+			return t.Error()
+		}
+	} else {
+		return fmt.Errorf("MQTT client not connected")
+	}
+	return nil
 }
 
 // New function to initialize MQTT client and start the goroutine
