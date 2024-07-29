@@ -229,8 +229,7 @@ func (s *mqttClient) DoCommand(ctx context.Context, cmd map[string]interface{}) 
 			if err := json.Unmarshal(jsonbody, &msg); err != nil {
 				return nil, err
 			}
-			//err = s.publish(msg.topic, msg.qos, msg.retained, msg.payload)
-			err = s.publish(msg.Topic, 0, false, "msg.Payload")
+			err = s.publish(msg.Topic, msg.Qos, msg.Retained, msg.Payload)
 			if err != nil {
 				return nil, err
 			} else {
