@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/viam-soleng/mqtt-client/mqttclient"
+	"github.com/lab101/mqtt-welding/mqttclient"
 	"go.viam.com/rdk/components/sensor"
 	"go.viam.com/rdk/logging"
 	"go.viam.com/rdk/module"

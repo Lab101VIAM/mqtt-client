@@ -1,4 +1,4 @@
-module github.com/viam-soleng/mqtt-client
+module github.com/lab101/mqtt-welding
 
 go 1.21.5
 
